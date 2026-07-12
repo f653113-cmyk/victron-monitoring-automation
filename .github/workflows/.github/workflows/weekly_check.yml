@@ -1,56 +1,79 @@
-def _detect_anomalies(self, site_name, kpis):
-    """Detect anomalies based on KPIs"""
-    from datetime import datetime
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
-    anomalies = []
+name: Weekly Anomaly Check
 
-    # Efficiency check
-    eff = kpis['avg_efficiency_pct']
-    if eff < self.thresholds['efficiency_critical']:
-        anomalies.append({
-            'type': 'LOW_EFFICIENCY_CRITICAL',
-            'severity': 'CRITICAL',
-            'timestamp': timestamp,
-            'message': f"{site_name}: Efficiency critically low at {eff}%",
-            'site': site_name
-        })
-    elif eff < self.thresholds['efficiency_warning']:
-        anomalies.append({
-            'type': 'LOW_EFFICIENCY',
-            'severity': 'WARNING',
-            'timestamp': timestamp,
-            'message': f"{site_name}: Efficiency low at {eff}%",
-            'site': site_name
-        })
+on:
+  schedule:
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
 
-    # Battery SOC check
-    min_soc = kpis['min_battery_soc_pct']
-    if min_soc < self.thresholds['battery_critical']:
-        anomalies.append({
-            'type': 'BATTERY_CRITICAL',
-            'severity': 'CRITICAL',
-            'timestamp': timestamp,
-            'message': f"{site_name}: Battery SOC critically low at {min_soc}%",
-            'site': site_name
-        })
-    elif min_soc < self.thresholds['battery_low']:
-        anomalies.append({
-            'type': 'BATTERY_LOW',
-            'severity': 'WARNING',
-            'timestamp': timestamp,
-            'message': f"{site_name}: Battery SOC low at {min_soc}%",
-            'site': site_name
-        })
+jobs:
+  check:
+    runs-on: ubuntu-latest
 
-    # PV Voltage check
-    pv_voltage = kpis['pv_voltage_max_v']
-    if pv_voltage > 500:
-        anomalies.append({
-            'type': 'OVERVOLTAGE',
-            'severity': 'WARNING',
-            'timestamp': timestamp,
-            'message': f"{site_name}: PV voltage high at {pv_voltage}V",
-            'site': site_name
-        })
+    steps:
+      - uses: actions/checkout@v4
 
-    return anomalies
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Fetch Latest Data
+        env:
+          VICTRON_API_TOKEN: ${{ secrets.VICTRON_API_TOKEN }}
+        run: |
+          python victron_fetcher.py $VICTRON_API_TOKEN
+
+      - name: Analyze Data
+        run: |
+          python analyzer.py
+
+      - name: Check for Anomalies
+        id: anomaly_check
+        run: |
+          python -c "
+          import json
+          with open('data/analysis.json') as f:
+            data = json.load(f)
+          anomalies = data.get('anomalies', [])
+          print(f'::set-output name=has_anomalies::{len(anomalies) > 0}')
+          print(f'::set-output name=anomaly_count::{len(anomalies)}')
+          "
+
+      - name: Generate Dashboard
+        if: steps.anomaly_check.outputs.has_anomalies == 'True'
+        run: |
+          python dashboard_generator.py
+
+      - name: Send Alert Email
+        if: steps.anomaly_check.outputs.has_anomalies == 'True'
+        env:
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
+          EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
+        run: |
+          python -c "
+          import json
+          from email_sender import EmailSender
+
+          with open('data/analysis.json') as f:
+            analysis = json.load(f)
+
+          sender = EmailSender('${{ env.GMAIL_ADDRESS }}', '${{ env.GMAIL_PASSWORD }}')
+          html = sender.create_report_html(analysis, 'alert')
+
+          if html:
+            recipients = '${{ env.EMAIL_RECIPIENTS }}'.split(',')
+            sender.send_report(recipients, '🚨 ALERT: Anomalies Detected in Solar Systems', html)
+          "
+
+      - name: Commit changes
+        run: |
+          git config --local user.email "automation@givepower.org"
+          git config --local user.name "Solar Monitor Bot"
+          git add data/ reports/
+          git commit -m "Weekly anomaly check - $(date +'%Y-%m-%d %H:%M:%S')" || true
+          git push
