@@ -8,8 +8,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
@@ -19,12 +17,6 @@ jobs:
           VICTRON_API_TOKEN: ${{ secrets.VICTRON_API_TOKEN }}
       - run: python analyzer.py
       - run: python dashboard_generator.py
-      - run: |
-          git config --local user.email "automation@givepower.org"
-          git config --local user.name "Solar Monitor Bot"
-          git add data/ reports/
-          git commit -m "Daily data sync - $(date +'%Y-%m-%d %H:%M:%S')" || true
-          git push
       - uses: actions/upload-artifact@v4
         with:
           name: daily-reports
