@@ -1,77 +1,52 @@
 name: Weekly Anomaly Check
-
 on:
   schedule:
     - cron: '0 8 * * 1'
   workflow_dispatch:
-
 jobs:
   check:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-
-      - name: Fetch Latest Data
+      - run: pip install -r requirements.txt
+      - run: python victron_fetcher.py ${{ secrets.VICTRON_API_TOKEN }}
         env:
           VICTRON_API_TOKEN: ${{ secrets.VICTRON_API_TOKEN }}
-        run: |
-          python victron_fetcher.py $VICTRON_API_TOKEN
-
-      - name: Analyze Data
-        run: |
-          python analyzer.py
-
-      - name: Check for Anomalies
-        id: anomaly_check
+      - run: python analyzer.py
+      - id: anomaly_check
         run: |
           python -c "
-          import json
+          import json, os
           with open('data/analysis.json') as f:
             data = json.load(f)
           anomalies = data.get('anomalies', [])
-          print(f'::set-output name=has_anomalies::{len(anomalies) > 0}')
-          print(f'::set-output name=anomaly_count::{len(anomalies)}')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as gh:
+            gh.write(f'has_anomalies={len(anomalies) > 0}\n')
+            gh.write(f'anomaly_count={len(anomalies)}\n')
           "
-
-      - name: Generate Dashboard
-        if: steps.anomaly_check.outputs.has_anomalies == 'True'
-        run: |
-          python dashboard_generator.py
-
-      - name: Send Alert Email
-        if: steps.anomaly_check.outputs.has_anomalies == 'True'
-        env:
-          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
-          GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
-          EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
+      - if: steps.anomaly_check.outputs.has_anomalies == 'true'
+        run: python dashboard_generator.py
+      - if: steps.anomaly_check.outputs.has_anomalies == 'true'
         run: |
           python -c "
           import json
           from email_sender import EmailSender
-
           with open('data/analysis.json') as f:
             analysis = json.load(f)
-
-          sender = EmailSender('${{ env.GMAIL_ADDRESS }}', '${{ env.GMAIL_PASSWORD }}')
+          sender = EmailSender('${{ secrets.GMAIL_ADDRESS }}', '${{ secrets.GMAIL_PASSWORD }}')
           html = sender.create_report_html(analysis, 'alert')
-
           if html:
-            recipients = '${{ env.EMAIL_RECIPIENTS }}'.split(',')
+            recipients = '${{ secrets.EMAIL_RECIPIENTS }}'.split(',')
             sender.send_report(recipients, '🚨 ALERT: Anomalies Detected in Solar Systems', html)
           "
-
-      - name: Commit changes
-        run: |
+        env:
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
+          EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
+      - run: |
           git config --local user.email "automation@givepower.org"
           git config --local user.name "Solar Monitor Bot"
           git add data/ reports/
