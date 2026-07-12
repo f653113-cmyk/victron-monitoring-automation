@@ -91,6 +91,8 @@ class EmailSender:
                 .anomaly {{ background: #fee; padding: 15px; margin: 10px 0; border-left: 4px solid #e74c3c; }}
                 .anomaly.warning {{ background: #fef5e7; border-left-color: #f39c12; }}
                 .anomaly-type {{ font-weight: bold; margin-bottom: 5px; }}
+                .anomaly-timestamp {{ font-size: 12px; color: #666; margin-bottom: 5px; }}
+                .anomaly-message {{ color: #333; }}
                 table {{ width: 100%; border-collapse: collapse; margin: 15px 0; }}
                 th, td {{ padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }}
                 th {{ background: #667eea; color: white; }}
@@ -148,15 +150,17 @@ class EmailSender:
             </table>
         """
 
-        # Anomalies
+        # Anomalies with timestamps
         if anomalies:
             html += "<h2>⚠️ Anomalies Detected</h2>"
             for anomaly in anomalies:
                 severity_class = 'warning' if anomaly.get('severity') == 'WARNING' else ''
+                timestamp = anomaly.get('timestamp', 'Unknown time')
                 html += f"""
                 <div class="anomaly {severity_class}">
                     <div class="anomaly-type">{anomaly.get('type', 'UNKNOWN')} ({anomaly.get('severity', 'WARNING')})</div>
-                    <div>{anomaly.get('message', 'N/A')}</div>
+                    <div class="anomaly-timestamp">🕐 {timestamp}</div>
+                    <div class="anomaly-message">{anomaly.get('message', 'N/A')}</div>
                 </div>
                 """
         else:
