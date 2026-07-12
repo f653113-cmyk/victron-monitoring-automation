@@ -1,0 +1,56 @@
+def _detect_anomalies(self, site_name, kpis):
+    """Detect anomalies based on KPIs"""
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
+    anomalies = []
+
+    # Efficiency check
+    eff = kpis['avg_efficiency_pct']
+    if eff < self.thresholds['efficiency_critical']:
+        anomalies.append({
+            'type': 'LOW_EFFICIENCY_CRITICAL',
+            'severity': 'CRITICAL',
+            'timestamp': timestamp,
+            'message': f"{site_name}: Efficiency critically low at {eff}%",
+            'site': site_name
+        })
+    elif eff < self.thresholds['efficiency_warning']:
+        anomalies.append({
+            'type': 'LOW_EFFICIENCY',
+            'severity': 'WARNING',
+            'timestamp': timestamp,
+            'message': f"{site_name}: Efficiency low at {eff}%",
+            'site': site_name
+        })
+
+    # Battery SOC check
+    min_soc = kpis['min_battery_soc_pct']
+    if min_soc < self.thresholds['battery_critical']:
+        anomalies.append({
+            'type': 'BATTERY_CRITICAL',
+            'severity': 'CRITICAL',
+            'timestamp': timestamp,
+            'message': f"{site_name}: Battery SOC critically low at {min_soc}%",
+            'site': site_name
+        })
+    elif min_soc < self.thresholds['battery_low']:
+        anomalies.append({
+            'type': 'BATTERY_LOW',
+            'severity': 'WARNING',
+            'timestamp': timestamp,
+            'message': f"{site_name}: Battery SOC low at {min_soc}%",
+            'site': site_name
+        })
+
+    # PV Voltage check
+    pv_voltage = kpis['pv_voltage_max_v']
+    if pv_voltage > 500:
+        anomalies.append({
+            'type': 'OVERVOLTAGE',
+            'severity': 'WARNING',
+            'timestamp': timestamp,
+            'message': f"{site_name}: PV voltage high at {pv_voltage}V",
+            'site': site_name
+        })
+
+    return anomalies
