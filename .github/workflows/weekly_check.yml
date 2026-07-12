@@ -1,0 +1,54 @@
+name: Weekly Anomaly Check
+on:
+  schedule:
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - run: pip install -r requirements.txt
+      - run: python victron_fetcher.py ${{ secrets.VICTRON_API_TOKEN }}
+        env:
+          VICTRON_API_TOKEN: ${{ secrets.VICTRON_API_TOKEN }}
+      - run: python analyzer.py
+      - id: anomaly_check
+        run: |
+          python -c "
+          import json, os
+          with open('data/analysis.json') as f:
+            data = json.load(f)
+          anomalies = data.get('anomalies', [])
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as gh:
+            gh.write(f'has_anomalies={len(anomalies) > 0}\n')
+            gh.write(f'anomaly_count={len(anomalies)}\n')
+          "
+      - if: steps.anomaly_check.outputs.has_anomalies == 'true'
+        run: python dashboard_generator.py
+      - if: steps.anomaly_check.outputs.has_anomalies == 'true'
+        run: |
+          python -c "
+          import json
+          from email_sender import EmailSender
+          with open('data/analysis.json') as f:
+            analysis = json.load(f)
+          sender = EmailSender('${{ secrets.GMAIL_ADDRESS }}', '${{ secrets.GMAIL_PASSWORD }}')
+          html = sender.create_report_html(analysis, 'alert')
+          if html:
+            recipients = '${{ secrets.EMAIL_RECIPIENTS }}'.split(',')
+            sender.send_report(recipients, '🚨 ALERT: Anomalies Detected in Solar Systems', html)
+          "
+        env:
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
+          EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
+      - run: |
+          git config --local user.email "automation@givepower.org"
+          git config --local user.name "Solar Monitor Bot"
+          git add data/ reports/
+          git commit -m "Weekly anomaly check - $(date +'%Y-%m-%d %H:%M:%S')" || true
+          git push
