@@ -55,7 +55,7 @@ Add these secrets:
    - Value: `vxrpvlvzqhtiojmj` (your Gmail App Password)
 
 4. **EMAIL_RECIPIENTS**
-   - Value: `gkipkirui@givepower.org` (or multiple emails comma-separated)
+   - Value: `f653113@gmail.com` (or multiple emails comma-separated)
 
 ### Step 4: Enable GitHub Actions
 
