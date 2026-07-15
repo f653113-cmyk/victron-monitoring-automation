@@ -1,10 +1,10 @@
-name: Weekly Anomaly Check
+name: Monthly Comprehensive Report
 on:
   schedule:
-    - cron: '0 8 * * 1'
+    - cron: '0 9 1 * *'
   workflow_dispatch:
 jobs:
-  check:
+  monthly:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -16,33 +16,27 @@ jobs:
         env:
           VICTRON_API_TOKEN: ${{ secrets.VICTRON_API_TOKEN }}
       - run: python analyzer.py
-      - id: anomaly_check
-        run: |
-          python -c "
-          import json, os
-          with open('data/analysis.json') as f:
-            data = json.load(f)
-          anomalies = data.get('anomalies', [])
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as gh:
-            gh.write(f'has_anomalies={len(anomalies) > 0}\n')
-            gh.write(f'anomaly_count={len(anomalies)}\n')
-          "
-      - if: steps.anomaly_check.outputs.has_anomalies == 'true'
-        run: python dashboard_generator.py
-      - if: steps.anomaly_check.outputs.has_anomalies == 'true'
-        run: |
+      - run: python dashboard_generator.py
+      - run: |
           python -c "
           import json
           from email_sender import EmailSender
+          from datetime import datetime
           with open('data/analysis.json') as f:
             analysis = json.load(f)
           sender = EmailSender('${{ secrets.GMAIL_ADDRESS }}', '${{ secrets.GMAIL_PASSWORD }}')
-          html = sender.create_report_html(analysis, 'alert')
+          html = sender.create_report_html(analysis, 'full')
           if html:
             recipients = '${{ secrets.EMAIL_RECIPIENTS }}'.split(',')
-            sender.send_report(recipients, '🚨 ALERT: Anomalies Detected in Solar Systems', html)
+            month = datetime.now().strftime('%B %Y')
+            sender.send_report(recipients, f'📊 Monthly Solar Report - {month}', html, attachments=['reports/dashboard.html'])
           "
         env:
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: monthly-report-${{ github.run_number }}
+          path: reports/
+          retention-days: 90
